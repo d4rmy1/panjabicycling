@@ -598,8 +598,9 @@ textarea { resize: vertical; min-height: 90px; }
         <span class="nav-icon">📣</span> Comms
       </button>
     </nav>
-    <div class="sidebar-footer">
-      All data local · Panjabi CC
+    <div class="sidebar-footer" style="display:flex; align-items:center; gap:8px">
+      <span id="sync-dot" style="width:8px;height:8px;border-radius:50%;background:#d97706;flex-shrink:0;transition:background 0.4s" title="Syncing…"></span>
+      <span id="sync-label" style="font-size:11px">Syncing…</span>
     </div>
   </aside>
 
@@ -1348,17 +1349,83 @@ const DEFAULTS = {
   ]
 };
 
+// ─── GOOGLE SHEETS SYNC ──────────────────────────────────────────────────────
+// Paste your Apps Script Web App URL below after deploying
+const SHEET_URL = 'https://script.google.com/macros/s/AKfycbwIr5m005rIt6PyedcGuWt5CbNoAR3vPJimp-1JOgX8ojMGzMGiEPos0TSIe2gbB8nZ/exec';
+
 function loadData(key) {
   try {
     const stored = localStorage.getItem('pcc_' + key);
-    return stored ? JSON.parse(stored) : JSON.parse(JSON.stringify(DEFAULTS[key]));
+    return stored ? JSON.parse(stored) : JSON.parse(JSON.stringify(DEFAULTS[key] || []));
   } catch(e) {
-    return JSON.parse(JSON.stringify(DEFAULTS[key]));
+    return JSON.parse(JSON.stringify(DEFAULTS[key] || []));
   }
 }
 
 function saveData(key, data) {
   try { localStorage.setItem('pcc_' + key, JSON.stringify(data)); } catch(e) {}
+  // Sync to Google Sheets in background
+  if (SHEET_URL) syncToSheet(key, JSON.stringify(data));
+}
+
+async function syncToSheet(key, value) {
+  try {
+    await fetch(SHEET_URL, {
+      method: 'POST',
+      body: JSON.stringify({ key: 'pcc_' + key, value }),
+      headers: { 'Content-Type': 'text/plain' }
+    });
+    showSyncDot('green');
+  } catch(e) {
+    showSyncDot('red');
+  }
+}
+
+async function loadFromSheet() {
+  if (!SHEET_URL) return;
+  showSyncDot('yellow');
+  try {
+    const res  = await fetch(SHEET_URL);
+    const text = await res.text();
+    const data = JSON.parse(text);
+    if (data.error) throw new Error(data.error);
+    let changed = false;
+    Object.keys(data).forEach(k => {
+      if (k.startsWith('pcc_') && data[k]) {
+        localStorage.setItem(k, data[k]);
+        changed = true;
+      }
+    });
+    if (changed) {
+      // Reload in-memory variables from freshly synced localStorage
+      members  = loadData('members');
+      routes   = loadData('routes');
+      rides    = loadData('rides');
+      rsvps    = loadData('rsvps');
+      events   = loadData('events');
+      messages = loadData('messages');
+      renderMembers();
+      renderRides();
+      renderEvents();
+      renderMessages();
+      renderCalendar();
+      updateStats();
+    }
+    showSyncDot('green');
+  } catch(e) {
+    console.warn('Sheet sync failed:', e);
+    showSyncDot('red');
+  }
+}
+
+function showSyncDot(color) {
+  const dot   = document.getElementById('sync-dot');
+  const label = document.getElementById('sync-label');
+  if (!dot) return;
+  const map   = { green:'#16a34a', yellow:'#d97706', red:'#dc2626' };
+  const texts = { green:'Synced ✓', yellow:'Syncing…', red:'Sync failed ⚠️' };
+  dot.style.background = map[color] || map.green;
+  if (label) label.textContent = SHEET_URL ? texts[color] : 'No sync configured';
 }
 
 // ─── DATA ───────────────────────────────────────────────────────────────────
@@ -1391,6 +1458,8 @@ function init() {
   renderMessages();
   renderCalendar();
   updateStats();
+  // Pull latest data from Google Sheets
+  loadFromSheet();
 }
 
 function updateStats() {
