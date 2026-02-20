@@ -2590,5 +2590,31 @@ if (new URLSearchParams(window.location.search).get('register') === '1') {
   openModal('modal-register');
 }
 </script>
+
+<script>
+function copyRegLink() {
+  const link = window.location.href.split('#')[0] + '#join';
+  navigator.clipboard.writeText(link).then(() => {
+    showToast("Registration link copied!");
+  });
+}
+
+function showToast(message) {
+  let toast = document.querySelector('.toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.className = 'toast';
+    document.body.appendChild(toast);
+  }
+
+  toast.textContent = message;
+  toast.classList.add('show');
+
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, 3000);
+}
+</script>
+
 </body>
 </html>
